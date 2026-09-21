@@ -4,9 +4,9 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+uv.lock
 
 # Generated contribution data and charts may contain private activity counts.
 *.svg
 *.csv
 *.json
-
