@@ -58,6 +58,18 @@ gh-contrib-chart \
   --csv monthly.csv
 ```
 
+Chart another public GitHub profile:
+
+```sh
+gh-contrib-chart \
+  --user legendhimself \
+  --type bar \
+  --group month \
+  --output legendhimself-monthly.svg
+```
+
+For another user, GitHub returns public contributions plus any private contribution counts they have chosen to expose. Private repository details remain hidden.
+
 Specific date range (maximum one year per request):
 
 ```sh

@@ -1,8 +1,9 @@
 import unittest
-
 from datetime import date
+from subprocess import CompletedProcess
+from unittest.mock import patch
 
-from github_contribution_charts.cli import Point, aggregate, nice_ceiling, one_year_before, render_svg
+from github_contribution_charts.cli import Point, aggregate, fetch, nice_ceiling, one_year_before, render_svg
 
 
 class ChartTests(unittest.TestCase):
@@ -36,6 +37,20 @@ class ChartTests(unittest.TestCase):
 
     def test_one_year_before_handles_leap_day(self):
         self.assertEqual(one_year_before(date(2024, 2, 29)), date(2023, 2, 28))
+
+    @patch("github_contribution_charts.cli.subprocess.run")
+    def test_fetch_can_target_public_user(self, run):
+        run.return_value = CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout='{"data":{"user":{"login":"legendhimself"}}}',
+            stderr="",
+        )
+        user = fetch(date(2026, 1, 1), date(2026, 2, 1), "legendhimself")
+        self.assertEqual(user["login"], "legendhimself")
+        command = run.call_args.args[0]
+        self.assertIn("login=legendhimself", command)
+        self.assertTrue(any("user(login: $login)" in argument for argument in command))
 
 
 if __name__ == "__main__":

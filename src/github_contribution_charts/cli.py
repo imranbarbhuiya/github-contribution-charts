@@ -14,21 +14,35 @@ from pathlib import Path
 from typing import Iterable
 
 
-QUERY = """
-query ContributionCalendar($from: DateTime!, $to: DateTime!) {
-  viewer {
-    login
-    contributionsCollection(from: $from, to: $to) {
-      contributionCalendar {
-        totalContributions
-        weeks {
-          contributionDays {
-            date
-            contributionCount
-          }
+CALENDAR_FIELDS = """
+fragment CalendarFields on User {
+  login
+  contributionsCollection(from: $from, to: $to) {
+    contributionCalendar {
+      totalContributions
+      weeks {
+        contributionDays {
+          date
+          contributionCount
         }
       }
     }
+  }
+}
+"""
+
+VIEWER_QUERY = CALENDAR_FIELDS + """
+query ContributionCalendar($from: DateTime!, $to: DateTime!) {
+  viewer {
+    ...CalendarFields
+  }
+}
+"""
+
+USER_QUERY = CALENDAR_FIELDS + """
+query ContributionCalendar($login: String!, $from: DateTime!, $to: DateTime!) {
+  user(login: $login) {
+    ...CalendarFields
   }
 }
 """
@@ -59,18 +73,21 @@ def one_year_before(day: date) -> date:
         return day.replace(year=day.year - 1, day=28)
 
 
-def fetch(from_day: date, to_day: date) -> dict:
+def fetch(from_day: date, to_day: date, username: str | None = None) -> dict:
+    query = USER_QUERY if username else VIEWER_QUERY
     command = [
         "gh",
         "api",
         "graphql",
         "-f",
-        f"query={QUERY}",
+        f"query={query}",
         "-F",
         f"from={iso_datetime(from_day)}",
         "-F",
         f"to={iso_datetime(to_day, end=True)}",
     ]
+    if username:
+        command.extend(["-F", f"login={username}"])
     try:
         result = subprocess.run(command, check=True, capture_output=True, text=True)
     except FileNotFoundError:
@@ -82,7 +99,10 @@ def fetch(from_day: date, to_day: date) -> dict:
     payload = json.loads(result.stdout)
     if payload.get("errors"):
         raise RuntimeError(payload["errors"][0].get("message", "GraphQL request failed"))
-    return payload["data"]["viewer"]
+    user = payload["data"]["user" if username else "viewer"]
+    if user is None:
+        raise RuntimeError(f"GitHub user not found: {username}")
+    return user
 
 
 def daily_points(viewer: dict) -> list[Point]:
@@ -195,6 +215,7 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--type", choices=("line", "bar"), default="line")
     result.add_argument("--group", choices=("day", "week", "month"), default="day")
+    result.add_argument("--user", help="GitHub username; defaults to the authenticated user")
     result.add_argument("--from", dest="from_day", type=parse_date, default=one_year_before(today))
     result.add_argument("--to", dest="to_day", type=parse_date, default=today)
     result.add_argument("--output", type=Path, default=Path("github-contributions.svg"))
@@ -212,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        viewer = fetch(args.from_day, args.to_day)
+        viewer = fetch(args.from_day, args.to_day, args.user)
         points = aggregate(daily_points(viewer), args.group)
     except (RuntimeError, KeyError, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)
